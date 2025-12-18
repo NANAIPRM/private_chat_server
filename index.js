@@ -17,8 +17,9 @@ const io = new Server(server, {
 });
 
 const CHAT_PASSWORD = process.env.CHAT_PASSWORD;
+const PORT = process.env.PORT || 4000;
 
-// เก็บ user ไว้ใน memory (ไม่ใช้ DB)
+// เก็บ user ไว้ใน memory
 const users = new Map();
 // socket.id => { username, avatar }
 
@@ -27,17 +28,24 @@ io.on('connection', (socket) => {
 
   // 🔐 join ด้วย password
   socket.on('join', ({ username, avatar, password }) => {
+    console.log('➡️ join event:', { username, avatar, password });
+
+    if (!username || !avatar || !password) {
+      socket.emit('join-error', 'Invalid join data');
+      return;
+    }
+
     if (password !== CHAT_PASSWORD) {
+      console.log('❌ Wrong password from', socket.id);
       socket.emit('join-error', 'Wrong password');
       return;
     }
 
     users.set(socket.id, { username, avatar });
 
-    socket.emit('join-success', {
-      username,
-      avatar,
-    });
+    console.log(`✅ ${username} joined chat`);
+
+    socket.emit('join-success');
 
     io.emit('message', {
       system: true,
@@ -49,7 +57,16 @@ io.on('connection', (socket) => {
   // 💬 ส่งข้อความ
   socket.on('message', (text) => {
     const user = users.get(socket.id);
-    if (!user) return;
+
+    console.log('💬 message event:', text, 'from', user);
+
+    // ❗ กันกรณียังไม่ join
+    if (!user) {
+      console.log('⚠️ message ignored (user not joined)');
+      return;
+    }
+
+    if (!text || !text.trim()) return;
 
     io.emit('message', {
       system: false,
@@ -61,8 +78,10 @@ io.on('connection', (socket) => {
   });
 
   // ❌ disconnect
-  socket.on('disconnect', () => {
+  socket.on('disconnect', (reason) => {
     const user = users.get(socket.id);
+    console.log('❌ Disconnected:', socket.id, reason);
+
     if (user) {
       io.emit('message', {
         system: true,
@@ -70,10 +89,11 @@ io.on('connection', (socket) => {
         at: new Date().toISOString(),
       });
     }
+
     users.delete(socket.id);
   });
 });
 
-server.listen(process.env.PORT, () => {
-  console.log(`🚀 Server running on port ${process.env.PORT}`);
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
