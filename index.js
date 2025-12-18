@@ -1,39 +1,28 @@
-require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const cors = require('cors');
 
 const app = express();
-app.use(cors());
-
 const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
     origin: '*',
-    methods: ['GET', 'POST'],
   },
 });
 
-const CHAT_PASSWORD = process.env.CHAT_PASSWORD;
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 10000;
+const CHAT_PASSWORD = process.env.CHAT_PASSWORD || 'nanaiprm';
 
-// เก็บ user ไว้ใน memory
+// เก็บ user ตาม socket.id
 const users = new Map();
-// socket.id => { username, avatar }
 
 io.on('connection', (socket) => {
   console.log('🔌 Connected:', socket.id);
 
-  // 🔐 join ด้วย password
+  // ===== JOIN =====
   socket.on('join', ({ username, avatar, password }) => {
     console.log('➡️ join event:', { username, avatar, password });
-
-    if (!username || !avatar || !password) {
-      socket.emit('join-error', 'Invalid join data');
-      return;
-    }
 
     if (password !== CHAT_PASSWORD) {
       console.log('❌ Wrong password from', socket.id);
@@ -41,32 +30,29 @@ io.on('connection', (socket) => {
       return;
     }
 
-    users.set(socket.id, { username, avatar });
-
-    console.log(`✅ ${username} joined chat`);
+    users.set(socket.id, {
+      username,
+      avatar,
+    });
 
     socket.emit('join-success');
 
     io.emit('message', {
       system: true,
-      text: `${avatar} ${username} joined the chat`,
-      at: new Date().toISOString(),
+      text: `🟢 ${avatar} ${username} joined the chat`,
     });
+
+    console.log(`✅ ${username} joined chat`);
   });
 
-  // 💬 ส่งข้อความ
+  // ===== MESSAGE =====
   socket.on('message', (text) => {
     const user = users.get(socket.id);
 
     console.log('💬 message event:', text, 'from', user);
 
-    // ❗ กันกรณียังไม่ join
-    if (!user) {
-      console.log('⚠️ message ignored (user not joined)');
-      return;
-    }
-
-    if (!text || !text.trim()) return;
+    if (!user) return;
+    if (typeof text !== 'string' || !text.trim()) return;
 
     io.emit('message', {
       system: false,
@@ -77,20 +63,19 @@ io.on('connection', (socket) => {
     });
   });
 
-  // ❌ disconnect
-  socket.on('disconnect', (reason) => {
+  // ===== DISCONNECT =====
+  socket.on('disconnect', () => {
     const user = users.get(socket.id);
-    console.log('❌ Disconnected:', socket.id, reason);
 
     if (user) {
       io.emit('message', {
         system: true,
-        text: `${user.avatar} ${user.username} left the chat`,
-        at: new Date().toISOString(),
+        text: `🔴 ${user.avatar} ${user.username} left the chat`,
       });
-    }
 
-    users.delete(socket.id);
+      users.delete(socket.id);
+      console.log(`🔴 ${user.username} disconnected`);
+    }
   });
 });
 
